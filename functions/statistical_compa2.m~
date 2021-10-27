@@ -1,0 +1,138 @@
+function [Resp_to_cs,Analysis_variance] = statistical_compa2(my_indiv,...
+        MyFieldnames,Scores,cs,mi,Resp_to_cs,Analysis_variance,...
+        max_phase,stim_name,MyJ)
+    
+% 23/09/2021: anova comparison for each group condition separately
+ 
+for p=1:2 % which para
+    
+    MyFieldnames2 = {'mean_per_indiv','peak_per_indiv'};
+    myfield = MyFieldnames2{p};
+    
+	for ph = 1:max_phase % which phase
+        for o = 1:length(cs) % which CS
+
+            my_o= o ;
+            mi= mi+1 ;
+            vs = 1;
+
+            % Compare resp to zero:
+             Resp_to_cs{mi+1,1} = [...
+                 MyFieldnames{1,o},' ',...
+                 MyFieldnames{2,ph},' ',...
+                 MyFieldnames{3,p}];
+
+            [~,Resp_to_cs{mi+1,2}] = kstest(Scores.(myfield){my_o,ph,vs}(my_indiv));
+            [~,Resp_to_cs{mi+1,3}] = ttest(Scores.(myfield){my_o,ph,vs}(my_indiv));
+            [Resp_to_cs{mi+1,4},~] = signrank(Scores.(myfield){my_o,ph,vs}(my_indiv));
+
+            if ph == 2 % was 1
+            % Compare Pre and Post:
+                 Resp_to_cs{o+p*3+20,1} = ['Pre vs Post ',...
+                     MyFieldnames{1,o},' ',MyFieldnames{3,p}];
+                 
+                 y = Scores.(myfield){my_o,1,vs}(my_indiv)-...
+                     Scores.(myfield){my_o,2,vs}(my_indiv);
+
+                [~,Resp_to_cs{o+p*3+20,2}] = kstest(y);
+                [~,Resp_to_cs{o+p*3+20,3}] = ttest(y);
+                [Resp_to_cs{o+p*3+20,4},~] = signrank(y);
+            end
+        end
+
+        my_o = 1;
+
+        % Compare CS- and CS+:
+%         Resp_to_cs{ph+p*2+12,1} = ['CS+ vs CS- ',...
+%             MyFieldnames{2,ph},' ',MyFieldnames{3,p}];
+        
+        Resp_to_cs{ph+p*2+12,1} = ...
+            [MyFieldnames{1,my_o},' vs ',MyFieldnames{1,my_o+1},' ',...
+            MyFieldnames{2,ph},' ',MyFieldnames{3,p}];
+
+        y = [Scores.(myfield){my_o,ph,vs}(my_indiv)-...
+            Scores.(myfield){my_o+1,ph,vs}(my_indiv)];
+        [~,Resp_to_cs{ph+p*2+12,2}] = kstest(y);
+        [~,Resp_to_cs{ph+p*2+12,3}] = ttest(y);
+        [Resp_to_cs{ph+p*2+12,4},~] = signrank(y);
+
+        if length(stim_name)>2
+            % Compare Ctrl odor and CS+:
+%             Resp_to_cs{ph+p*2+16,1} = [stim_name{1},'vs ',stim_name{3},...
+%                 MyFieldnames{2,ph},' ',MyFieldnames{3,p}];
+            Resp_to_cs{ph+p*2+16,1} = [MyFieldnames{1,my_o},'vs ',...
+                MyFieldnames{1,length(cs)},...
+                MyFieldnames{2,ph},' ',MyFieldnames{3,p}];
+            
+            y = Scores.(myfield){my_o,ph,vs}(my_indiv)-...
+                Scores.(myfield){length(cs),ph,vs}(my_indiv);
+            [~,Resp_to_cs{ph+p*2+16,2}] = kstest(y);
+            [~,Resp_to_cs{ph+p*2+16,3}] = ttest(y);
+            [Resp_to_cs{ph+p*2+16,4},~] = signrank(y);
+        end
+    end
+end
+
+% Anova tests:
+Analysis_variance{1,1} = {'indiv and stim'};
+Analysis_variance{2,1} = {'indiv'};
+
+% Concatenate all data:
+y=[];
+% format: Scores.mean_indiv_events{o,phase,indiv_id}
+for k=1:size(Scores.mean_indiv_events,2)
+    for j=1:size(cs)
+        y_tp = [Scores.mean_indiv_events{j,k,my_indiv}];
+%         y2_tp = [Scores.mean_indiv_events{j,k,my_indiv}]; 
+        y = [y,y_tp];%,y2_tp];
+    end
+end
+
+% define grouping variables:
+c1=[]; c2=[]; c3=[];
+for k= 1:size(Scores.mean_indiv_events,2) % loop for phase
+    for j= 1:size(cs) % loop for odor
+        for i= my_indiv%size(Scores.mean_indiv_events{:,:,my_indiv},3) % loop for indiv_id
+
+            %indiv group var:
+            c1_tp = repmat(i,1,size(Scores.mean_indiv_events{j,k,i},2));
+            c1 = [c1,c1_tp];
+
+            % phase group var:
+            c2_tp = repmat(k,1,size(Scores.mean_indiv_events{j,k,i},2));
+            c2 = [c2,c2_tp];
+            
+            % odor group var:
+            c3_tp = repmat(j,1,size(Scores.mean_indiv_events{j,k,i},2));
+            c3 = [c3,c3_tp];        
+
+        end 
+    end
+end
+    
+% Test 1 - Anova with interaction:
+
+[P,T,STATS,TERMS] = ...
+    anovan(y,{c1,c2,c3},'model','interaction',...
+    'varnames',{'individuals','phase','type of stim'},'display','off');
+
+Analysis_variance{1,2} = T;
+Analysis_variance{1,3} = STATS;
+
+
+% Test 2 - Anova simple effects:
+[P,T,STATS,TERMS] = ...
+    anovan([y],{c1},'varnames',{'individuals'},'display','off');
+
+Analysis_variance{2,2} = T;
+Analysis_variance{2,3} = STATS;
+
+
+% Test 3 - Anova per group
+for j= 1:size(cs) 
+    [P,T,STATS,TERMS] = ...
+        anovan([y(c3==j)],{c1(c3==j)},'varnames',{'individuals'},'display','off');
+
+    Analysis_variance{3,2} = [c1;c2;c3];
+    Analysis_variance{3,3+j} = T;
+end

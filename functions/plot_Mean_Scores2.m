@@ -1,0 +1,29 @@
+function plot_Mean_Scores2(p,o,Scores,whichCS,my_indiv,...
+    color,markersize,linewidth)
+
+hold on
+Fieldnames2 = {'mean_per_indiv','peak_per_indiv'};
+myfield = Fieldnames2{p};
+
+errorbar([.9;2.1],...
+[nanmean(Scores.(myfield){o,1}(my_indiv));...
+nanmean(Scores.(myfield){o,2}(my_indiv))],...
+[nanstd(Scores.(myfield){o,1}(my_indiv)); ...
+nanstd(Scores.(myfield){o,2}(my_indiv))], ...
+'-o','color',color,...
+'Markerfacecolor',color,...
+'Markersize',markersize,...
+'linewidth',linewidth); 
+
+line([.5,3],[0,0],'Color','k','linewidth',.5) % zero line
+
+% Title
+% title(whichCS{1,o})
+
+box off
+axis([0.7 2.3 -.4 5.6]) 
+if p==1
+    ylabel('Mean')
+elseif p==2
+    ylabel('Peak')                    
+end

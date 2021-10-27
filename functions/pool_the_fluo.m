@@ -1,0 +1,33 @@
+function [Df_pool_tp,Df_Curve_pool,Df_Curve_pool_eb] = pool_the_fluo(...
+    Df_pool_tp,o,phase,indiv_id,vs,n,frame_dur,...
+    norm_frame_dur,Df_Curve_pool,Df_Curve_pool_eb,y,cs,g_b,g_t,DF_Score)
+
+% Fill tp cell with all df/f0 signals for the same larva
+Df_pool_tp{o,phase,indiv_id,vs}{n-1}=y;
+
+% Interpolate & average df/f0 for a given larva & timescale
+I= interpolate_and_average(Df_pool_tp{o,phase,indiv_id,vs},...
+    frame_dur,norm_frame_dur);
+
+% Store the results in a cell:
+Df_Curve_pool{o,phase,vs}{indiv_id}   = I.Averaged_datasets;
+Df_Curve_pool_eb{o,phase,vs}{indiv_id}= I.Stdev_datasets;
+
+if vs + phase + o == 4 + length(cs) 
+    for ph = 1:2
+        for oA = 1:2
+            
+        Df_Curve_pool{oA,ph,3}{indiv_id} = ...
+            Df_Curve_pool{oA,ph,2}{indiv_id} * ...
+            mean([nanmean(g_b(indiv_id,1:end/2)),...
+            nanmean(g_t(indiv_id,1:end/2))]);
+
+        Df_Curve_pool{oA,ph,4}{indiv_id} = ...
+            Df_Curve_pool{oA,ph,1}{indiv_id} * ...
+            mean([DF_Score{length(cs),1,1}(indiv_id),...
+            DF_Score{length(cs),2,1}(indiv_id)])/...
+            DF_Score{length(cs),ph,1}(indiv_id);
+
+        end
+    end
+ end

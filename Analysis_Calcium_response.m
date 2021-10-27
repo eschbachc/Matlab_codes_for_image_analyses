@@ -1,0 +1,450 @@
+%**************************************************************************
+ROI_table_20211020;% this clears everything!
+
+% Where are the scripts stored:
+rootfolder = pwd ;
+addpath([rootfolder,'/functions/']);
+
+% DEFINE groups (if more than 1 they will be pooled on the same fig) *******
+for MyGroups = 1:4
+% MyGroups =  [3]; % SS02108_costim
+% MyGroups =  [4]; % SS02163_costim 
+% MyGroups =  [1]; % Odor resp SS02108 KC-TNT
+% MyGroups =  [2]; % Odor resp SS02163 KC-TNT
+
+type = A{MyGroups(1),1}(9:end);
+
+c=cellfun(@length,A);
+N_plot = sum(c(MyGroups,2));
+
+c = clock;
+disp(['it is ' ,num2str(c(4)),'h',num2str(c(5)),'.']); 
+
+% Preallocate variables  **************************************************
+[MyColor,norm_frame_dur,time_before_stim,time_after_stim,...
+gap,stim_num,DF_tp,DF,Mean_tp,Peak_tp,Ampli_tp,Scores,Resp_to_odors,Statistics,...
+MyFieldnames,whichCS,l,Cumu_larv] = reset_var(N_plot,type);
+
+for which_group = MyGroups
+
+% Define variables and paths **********************************************
+%     MyPath = '/Users/eschbachc/Desktop/Data/uF/uF_July2018/SS02163/';
+%     MyPath2save = '/Users/eschbachc/Desktop/Data/uF/';
+
+    MyPath = [rootfolder,'/data/'];
+    MyPath2save = [rootfolder,'/outputs/'];
+
+    AKeyW1='al';    % Keyword to exclude files/subfolders
+    AKeyW2= 'ign';      % Keyword to exclude
+    AKeyW3 =  'train';  % Keyword to exclude
+    whichCS = {'MEe1','EAe4','AMe3'};
+    year = '1';
+
+    myYlabel = {'BEFORE','AFTER'};
+    plot_the_mean = 'n'; % compute the mean only after the last group
+       
+    if which_group==MyGroups(1)   % first group resets variables
+        if length(MyGroups)==1
+            plot_the_mean = 'y' ; %data of groups will be averaged and plotted at end of script
+            mi = 0;  % counter used for statistical analysis (statistical_compa2)
+            N_plot = length(A{which_group,2});
+        end
+    elseif which_group==MyGroups(end) % last of the pooled groups
+        plot_the_mean = 'y' ; %data of groups will be averaged and plotted at end of script
+        mi = 0;     
+    end
+
+% Reset counters  *********************************************************   
+    [J,J_larv,J_step,Myj,j,cs,phase,t] = reset_counters;
+    
+% ORGANIZE data   *********************************************************
+% List folders containing Keyword but not AntiKeyword:
+    [Dir_Names] = list_dir2(MyPath,year,AKeyW1,AKeyW2); 
+    
+% Create vectors: N# ROIs per exp (will loop for the same exp if many ROIs)
+	[MyJ,J_idx] = list_individuals(A{which_group,2},Dir_Names);
+    
+% Start loop **************************************************************
+    for J = MyJ
+        J_step = J_step+1;  % Count of steps in the J loop
+        mycase = 'NotTheLastRunForThisIndiv';
+
+    % Count of indiv in the J loop:
+        if J_idx(J_step) == 1 % if =1 means new indiv
+            J_larv = J_larv+1; % J_larv counts number of indiv
+            l=l+1;
+            if J==MyJ(end) && J_idx(J_step) == J_idx(end)
+                mycase = 'LastRunForThisIndiv';
+            elseif J_idx(J_step) == J_idx(J_step+1)
+                mycase = 'LastRunForThisIndiv';
+            end
+        elseif J==MyJ(end) && J_idx(J_step) == J_idx(end)
+            mycase = 'LastRunForThisIndiv';
+        elseif J_idx(J_step) > J_idx(J_step+1)
+            mycase = 'LastRunForThisIndiv';
+        end 
+        
+    % List of larvae name:
+       Larvae_names{Cumu_larv+J_larv,1} = A{which_group,2}{J_larv,1} ;
+
+     % Number of files to analyze for a given J 
+     % Files @ before & after training are mixed & will be sorted later
+       Myj = 1:length(A{which_group,2}{J_larv,2});
+       
+     % Corresponding ROI idx for a given J
+       My_ROI_id = A{which_group,2}{J_larv,J_idx(J_step)+1};    
+       
+    % get the names of the tiff files for one indiv:    
+       Fol = Dir_Names(J).name;
+       TifFilenames = list_files(MyPath,Fol,year,'meta',AKeyW2,AKeyW3);
+       TifFilenames = {TifFilenames.name};
+       
+% START small loop  *******************************************************  
+       for j = Myj % N# of files taken into account
+            
+           % Get the file and subfolder names from the list    
+            filename = TifFilenames{j}(1:end-9);
+            filepath = [MyPath,Fol,'/'];
+            
+% Load the data ***********************************************************        
+
+           % Get ROI number
+           ROI = My_ROI_id(j);
+
+           if ROI==0 % ignore the file <- this cannot be removed
+           else
+             % Load T variable (fluo data)
+            load([MyPath,Fol,'/',filename,'_fluo.mat']);
+            
+             % Load uFExp variable (metadata)
+            load([MyPath,Fol,'/',filename,'_meta.mat']); 
+            
+             % Get info about this run
+            [~,cs,fr_before_stim,fr_during_stim,fr_after_stim,...
+               myDifMean_G,myRawMean_G,frame_window]=...
+                about_this_run_no_training(...
+                filename,...
+                T,...
+                A{which_group,1},...
+                ROI,...
+                time_before_stim,...
+                uFExp.STIM_dur,...
+                uFExp.STIM_onset,...
+                gap);
+            phase = 1; % overwrites previous phase (var only for learning)
+            
+             % Count of stim repeats:
+            if J_idx(J_step) == 1 % if =1 means new indiv
+                stim_num(Cumu_larv+J_larv,phase) = ...
+                    stim_num(Cumu_larv+J_larv,phase) + 1;
+            end
+                    
+% % Compute Df/f0 and pool different ROI for the same stim ****************   
+
+            for o = 1:length(cs)
+              for t = 1:2
+                
+                % Find the time of the stimulations in the metadata
+                my_field = cs{o}{1};
+                if contains(my_field,'STIM')
+                    STIM_onset = uFExp.([my_field,'_onset']){cs{o}{2}}(t);
+                    STIM_dur = uFExp.([my_field,'_dur']){1}(t);
+                elseif contains(my_field,'LIGHT')
+                    STIM_onset = uFExp.([my_field,'_onset'])(t)/1000;
+                    STIM_dur = uFExp.([my_field,'_dur'])(t);
+                end
+                 my_stim_onset = round(time_before_stim/T.frame_dur);
+
+                
+                % Extract the fluo in a specific window of time
+                [y,x]= ...
+                    about_this_stim(...
+                    round(STIM_onset/T.frame_dur),...
+                    fr_before_stim,...
+                    frame_window,...
+                    myDifMean_G,...
+                    T.frame_dur);
+                
+                
+% Interpolate data and pool, compute average and store in Scores **********
+
+                % Loop for during and after stim:
+                 for phase = 1:2 % var now used for ON vs OFF response
+                    if phase == 1
+                        fr_to_take = fr_during_stim;
+                    else
+                        fr_to_take = fr_after_stim;
+                    end
+                    
+                    [Mean_tp,Peak_tp,Ampli_tp,DF_tp,Scores] = pool_over_regions(...
+                        o,...
+                        phase,...
+                        Cumu_larv+J_larv,...
+                        y,...
+                        fr_before_stim+my_stim_onset,...
+                        fr_to_take+my_stim_onset,...
+                        Mean_tp,...
+                        Peak_tp,... 
+                        Ampli_tp,... 
+                        DF_tp,...
+                        Scores,...
+                        2*(stim_num(Cumu_larv+J_larv)-1)+t,...
+                        norm_frame_dur,...
+                        T.frame_dur);
+                 end
+               end % loop for 2 repeats per stim
+             end % loop for the 2 CS stim
+           end 
+        end % loop for each file per larva
+    
+% ALL DATA FOR A GIVEN DESIGN *********************************************
+    
+        switch mycase 
+        case 'LastRunForThisIndiv' 
+        
+        for o = 1:length(cs)
+
+            
+            my_field = cs{o}{1};
+            if contains(my_field,'STIM')
+                STIM_dur = uFExp.([my_field,'_dur']){1}(t);
+            elseif contains(my_field,'LIGHT')
+                STIM_dur = uFExp.([my_field,'_dur'])(t);
+            end
+
+            for my_stim = 1:2*(stim_num(l)-1)+t
+
+% Plot individual fluorescence over time (1 plot per indiv) ***************
+
+                figure(1)
+                subplot(N_plot,length(cs),length(cs)*(l-1)+o) ;
+                hold on
+
+                % Define x and y
+                y = mean(DF_tp{o,1,l,my_stim},1);
+                x = length(y)*norm_frame_dur;%length(y)*T.frame_dur;
+                
+                %!! data is smoothed for amplitude to avoid noise
+                when_stim_comes=round(time_before_stim/norm_frame_dur);
+                fluo_while_the_stim = smooth(y(when_stim_comes:...
+                    when_stim_comes+time_before_stim/norm_frame_dur));
+                fluo_before_the_stim = smooth(y(1:when_stim_comes));
+                Scores.ampli_per_indiv{t,o}(l) = ...
+                    abs(max(fluo_while_the_stim) - min(fluo_while_the_stim))-...
+                    abs(max(fluo_before_the_stim) - min(fluo_before_the_stim));            
+                
+                % Define color code that fades with stim presentation
+                MyFadingColor =[repmat(MyColor,1,4-my_stim),...
+                    repmat(ones(size(MyColor)),1,my_stim)];
+                MyFadingColor = [mean(MyFadingColor(:,1:3:12),2),...
+                    mean(MyFadingColor(:,2:3:12),2),...
+                    mean(MyFadingColor(:,3:3:12),2)];
+
+                % plot 1 line per response to stimulus presentation
+                plot_indiv_dF_F0(l,...
+                    o,...
+                    MyFadingColor,...
+                    ' ',...
+                    ' ',...
+                    [0 x -2 3],...
+                    STIM_dur,...
+                    time_before_stim,...
+                    2,...
+                    y,...
+                    norm_frame_dur:norm_frame_dur:x,...
+                    0.8,...
+                    0,0);
+
+                % store the response for each indiv to each repeat in DF 
+                DF.indiv_stim{o,1,l}{my_stim} = y;
+            end   
+
+            % interpolate & average fluo response for a given individual 
+            [resu] = ...
+                interpolate_and_average(...
+                DF.indiv_stim{o,1,l},...
+                norm_frame_dur,...
+                norm_frame_dur);
+            
+            % store the fluo response in new variable for pooling
+            fn = fieldnames(resu);
+            for i=1:length(fn)
+                DF.(fn{i}){o,1,l} = resu.(fn{i});
+            end
+ 
+            y = DF.(fn{1}){o,1,l}; % new
+            x = length(y) * norm_frame_dur ; % new
+        
+            % plot the mean resp per individual
+            plot_indiv_dF_F0(l,...
+                MyFieldnames{1,o},...
+                MyColor,...
+                Larvae_names{l},...
+                A{which_group,1},...
+                [0 x -1 3],...
+                STIM_dur,...
+                time_before_stim,...
+                1,...
+                y,...
+                norm_frame_dur:norm_frame_dur:x,...
+                2,...
+                1,o);
+            if which_group == 14 && l==6
+                axis([0 x -1 6])
+            elseif which_group == 20 && ismember(l,[4 5 13])
+                axis([0 x -1 5])
+            elseif which_group == 21 && l==4
+                axis([0 x -1 5])
+            elseif which_group == 12 && ismember(l,[3 6])
+                axis([0 x -1 5])
+            end
+        end            
+       
+%     % Test if responses to odors are significant (used to discard data)
+%         [Resp_to_odors]= significant_response2(...
+%             Scores.mean_indiv_events,l,Resp_to_odors);  
+
+        end % mycase
+    end % J
+    
+% Stats *******************************************************************
+
+    if plot_the_mean == 'y' % Once all groups have been processed
+
+%         % Criteria to select indiv: p-value for before and after training
+%       [selected_indiv] = select_indiv(l,Resp_to_odors,0.1,0.1);
+        
+        % Statistical comparison on responses
+        [Statistics.RespToCS_pVal,Statistics.Analysis_variance] = ...
+            statistical_compa2(...
+            1:l,...
+            MyFieldnames,...
+            Scores,...
+            1:length(cs),...
+            mi,...
+            Statistics.RespToCS_pVal,...
+            Statistics.Analysis_variance,...
+            2,...
+            cs,...
+            MyJ) ;               
+              
+        
+% Plot averages of all larvae *********************************************       
+
+        for o = 1:length(cs)
+          for phase = 1:2
+             for p = 1:3 %2 parameters
+                for l1 = 1:l
+
+                    % Plot Df/f0 over time for CS+ & CS- (individual data)
+                    if p==1
+                        
+                        figure(2)
+                        subplot(length(cs),8-contains(type,'costim'),...
+                            (o-1)*(5+length(cs))+1)
+                        hold on
+
+                        % get the data
+                        y = mean(DF.Averaged_datasets{o,1,l1},1);
+%                         x = length(y)*T.frame_dur;
+                        x = length(y)*norm_frame_dur;
+
+                        % plot - was cs{o}{1}
+                        plot_indiv_dF_F0(l1,...
+                            o,...
+                            MyColor,...
+                            MyFieldnames{1,o},...
+                            ' ',...
+                            [0 x -1 3.5],...
+                            STIM_dur,...
+                            time_before_stim,...
+                            2,...
+                            smooth(y),...
+                            norm_frame_dur:norm_frame_dur:x,...
+                            1,...
+                            l1,.8);
+                        hold on
+                    end
+                    
+                    % Plot scores (individual data)
+                    figure(2) 
+                    subplot(length(cs),8-contains(type,'costim'),...
+                        (o-1)*(5+length(cs))-2+p+phase*3) 
+                    hold on
+
+                    plot_Mean_Scores3(...
+                        p,o,phase,...
+                        Scores,...
+                        '',...
+                        l1,...
+                        MyColor(l1,:),...
+                        6,...
+                        1)
+                end
+                
+                plot_Mean_Scores3(...
+                    p,o,phase,...
+                    Scores,...
+                    MyFieldnames{1,o},...
+                    1:l,...
+                    [0 0 0],...
+                    9,...
+                    1.5)         
+             end
+          end
+% Interpolate to average all individuals **********************************
+
+            % Interpolate and pool the data
+            y_tp={DF.Averaged_datasets{o,1,1:l}};
+            [y,x,eb] = interpolate_and_pool_fluo(...
+                y_tp,...
+                norm_frame_dur,...
+                l);                    
+
+% Plot the averaged data **************************************************
+            % Plot the data
+
+           figure(2)
+           subplot(length(cs),8-contains(type,'costim'),(o-1)*(5+length(cs))+1) 
+           hold on
+
+            % Plot the shaded error bar
+            shadedErrorBar(x,smooth(y),smooth(eb),...
+                {'color',[0 0 0],...
+                'linewidth',1.5})
+        end
+    end
+
+% End of the loop: keep track of the total individuals ********************
+    Cumu_larv = Cumu_larv+J_larv;
+end
+
+% Define figure properties and save figures and statistics ****************
+save_it_all(MyPath2save,A{which_group,1},Statistics,N_plot,type,length(cs))
+
+T_EA = table();
+T_KC = table();
+vars_EA{1} = [];
+vars_KC{1} = [];
+vars_EA{1} = x;
+vars_KC{1} = x;
+varnames{1} = 'normalised_time'
+
+for i=1:size(DF.indiv_stim,3)
+    vars_EA{i+1} = cell2mat(DF.indiv_stim{2,1,i}');
+    vars_KC{i+1} = cell2mat(DF.indiv_stim{1,1,i}');
+    varnames{i+1} = ['indiv',num2str(i),'_repeat'];
+end
+rows = cellfun(@(M) size(M,2), vars_EA);
+cols = cellfun(@(M) size(M,1), vars_EA);
+maxrows = max(rows);
+for K = 1 : length(varnames)
+    T_EA.(varnames{K}) = [vars_EA{K}'; nan(maxrows - rows(K), cols(K))];
+    T_KC.(varnames{K}) = [vars_KC{K}'; nan(maxrows - rows(K), cols(K))];
+end
+writetable(T_EA, [A{which_group,1},'Resp_to_EA.csv']);
+writetable(T_KC, [A{which_group,1},'Resp_to_KC.csv']);
+
+
+close all
+end
